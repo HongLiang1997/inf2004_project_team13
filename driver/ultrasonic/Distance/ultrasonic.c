@@ -1,54 +1,86 @@
 #include "pico/stdlib.h"
 #include <stdio.h>
-#include "ultrasonic.h"
-#include "hardware/uart.h"
+#include "hardware/gpio.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "message_buffer.h"
 
-uint trigPin = 0;
-uint echoPin = 1;
+#define TRIG_PIN 0
+#define ECHO_PIN 1
+#define maxdistance 40 // maximum range of ultrasonic sensor
+#define speedofsound 0.0343 // Speed of sound in cm
 
-// Define a message buffer handle
-static MessageBufferHandle_t xUltrasonicMessageBuffer;
+volatile uint32_t starttime = 0; // timestamp for start of echo
+volatile uint32_t endtime = 0;   // timestamp for end of echo
+volatile bool detectedecho = false; // check if echo detected
+
+uint trigPin = TRIG_PIN;
+uint echoPin = ECHO_PIN;
 
 
-// Define the handler for the ultrasonic sensor interrupt
-void ultrasonic_interrupt_handler_task(void *pvParameters) {
+// define the handler for the ultrasonic sensor interrupt
+void ultrasonic_interrupt_handler_task(void *pvParameters)
+{
     float distance;
     TickType_t xLastWakeTime = xTaskGetTickCount(); // Initialize the last wake time
 
-    while (1) {
-        xMessageBufferReceive(xUltrasonicMessageBuffer, (void *)&distance, sizeof(float), portMAX_DELAY);
-        if(distance<10.0)
-        {
-            printf("Object at %0.2f cm\n", distance); // Print the received distance only if < 10cm
+    while (1)
+    {
+        gpio_put(trigPin, 1);
+        sleep_us(10);
+        gpio_put(trigPin, 0);
+
+        while (!detectedecho) {} // Wait for an echo to be detected
+
+        uint32_t pulseduration = endtime - starttime;
+
+        uint32_t distance_cm = (pulseduration * speedofsound) / 2;
+
+        if (distance_cm <= maxdistance) {
+            distance = (float)distance_cm;
+            printf("Distance: %0.2f cm\n", distance); 
+        } else {
+            printf("Out of range\n"); 
         }
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500)); // Wait for half second
+
+        detectedecho = false;
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500)); // delay for 500 milliseconds. finetune for frequency of distance
     }
 }
 
-void distance_measurement_task(void *pvParameters) {
-    setupUltrasonicPins(trigPin, echoPin);
-    float distance;
-    
-    while (1) {
-        distance = getCm(trigPin, echoPin);
-        xMessageBufferSend(xUltrasonicMessageBuffer, (void *)&distance, sizeof(float), 0);
-        vTaskDelay(pdMS_TO_TICKS(100)); // Delay for 100 milliseconds
+
+// ISR for the ECHO pin events
+void echo_isr(uint gpio, uint32_t events) {
+    if (events & GPIO_IRQ_EDGE_RISE) {
+        starttime = time_us_32(); // capture timestamp for the rising edge of the echo pulse
+    } else if (events & GPIO_IRQ_EDGE_FALL) {
+        endtime = time_us_32(); // capture timestamp for the falling edge of the echo pulse
+        detectedecho = true; // Set the detectedecho flag to true
     }
 }
+
+// initialize GPIO pins for the ultrasonic sensor
+void init_ultrasonic_pins() {
+    gpio_init(ECHO_PIN);
+    gpio_set_dir(ECHO_PIN, GPIO_IN);
+    gpio_set_irq_enabled_with_callback(ECHO_PIN, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, &echo_isr);
+
+    gpio_init(TRIG_PIN);
+    gpio_set_dir(TRIG_PIN, GPIO_OUT);
+}
+
+
 
 int main() {
-    stdio_init_all();
+    stdio_init_all(); // Initialize standard I/O
+    init_ultrasonic_pins(); // Initialize GPIO pins for the ultrasonic sensor
 
-    xUltrasonicMessageBuffer = xMessageBufferCreate(sizeof(float) * 2); // Adjust the size as needed
+    // Delay for 2 seconds before starting ultrasonic task.
+    // Cannot be too fast or won't initialize properly.
+    sleep_ms(2000);  
 
-
-    // Create the distance_measurement_task and ultrasonic_interrupt_task task
-    xTaskCreate(distance_measurement_task, "DistanceTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
+    // Create the ultrasonic_interrupt_handler_task task
     xTaskCreate(ultrasonic_interrupt_handler_task, "UltrasonicTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
-
 
     // Start the FreeRTOS scheduler
     vTaskStartScheduler();
@@ -56,4 +88,5 @@ int main() {
     while (1) {
         // Code should never reach here if FreeRTOS is set up correctly
     }
+    return 0;
 }
