@@ -72,21 +72,21 @@ void init_ultrasonic_pins() {
 
 
 int main() {
-    stdio_init_all(); // Initialize standard I/O
-    init_ultrasonic_pins(); // Initialize GPIO pins for the ultrasonic sensor
+    stdio_init_all(); // initialize standard I/O
+    init_ultrasonic_pins(); // initialize GPIO pins for the ultrasonic sensor
 
-    // Delay for 2 seconds before starting ultrasonic task.
-    // Cannot be too fast or won't initialize properly.
+    // delay for 2 seconds before starting ultrasonic task.
+    // cannot be too fast or won't initialize properly.
     sleep_ms(2000);  
 
-    // Create the ultrasonic_interrupt_handler_task task
+    // create the ultrasonic_interrupt_handler_task task
     xTaskCreate(ultrasonic_interrupt_handler_task, "UltrasonicTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
 
-    // Start the FreeRTOS scheduler
+    // start the FreeRTOS scheduler
     vTaskStartScheduler();
 
     while (1) {
-        // Code should never reach here if FreeRTOS is set up correctly
+        // code should never reach here if FreeRTOS is set up correctly
     }
     return 0;
 }
