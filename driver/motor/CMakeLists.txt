@@ -3,7 +3,7 @@ add_executable(motor
         )
 
 # pull in common dependencies and additional pwm hardware support
-target_link_libraries(motor pico_stdlib hardware_pwm)
+target_link_libraries(motor pico_stdlib hardware_pwm hardware_gpio)
 
 # enable usb output, enable uart output
 pico_enable_stdio_usb(ir_line_detector 1)

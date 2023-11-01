@@ -75,22 +75,22 @@ void turn_right(void *params) {
 }
 
 int main() {
-    initMotor();
+    initMotor(NULL);
     set_left_speed(0.8);
     set_right_speed(0.8);
 
     while(1){
-        move_forward();
-        sleep(2);
-        stop();
-        move_backward();
-        sleep(2);
-        stop();
-        turn_left();
-        sleep(2);
-        stop();
-        turn_right();
-        sleep(2);
-        stop();
+        move_forward(NULL);
+        sleep_ms(2000);
+        stop(NULL);
+        move_backward(NULL);
+        sleep_ms(2000);
+        stop(NULL);
+        turn_left(NULL);
+        sleep_ms(2000);
+        stop(NULL);
+        turn_right(NULL);
+        sleep_ms(2000);
+        stop(NULL);
     }
 }
