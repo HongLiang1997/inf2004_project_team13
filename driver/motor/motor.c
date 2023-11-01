@@ -7,7 +7,7 @@
 uint slice_num_left;
 uint slice_num_right;
 
-void initMotor(void *params) {
+void init_motor(void *params) {
     gpio_set_function(LEFT_WHEEL, GPIO_FUNC_PWM);
     gpio_set_function(RIGHT_WHEEL, GPIO_FUNC_PWM);
 
@@ -76,7 +76,7 @@ void turn_right(void *params) {
 
 int main(void) {
     stdio_init_all();
-    initMotor(NULL);
+    init_motor(NULL);
     set_left_speed(0.8);
     set_right_speed(0.8);
 
