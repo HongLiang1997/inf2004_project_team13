@@ -74,7 +74,8 @@ void turn_right(void *params) {
     gpio_put(LEFT_WHEEL_BACKWARD, 0);
 }
 
-int main() {
+int main(void) {
+    stdio_init_all();
     initMotor(NULL);
     set_left_speed(0.8);
     set_right_speed(0.8);
