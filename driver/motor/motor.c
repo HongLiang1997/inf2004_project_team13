@@ -79,16 +79,18 @@ int main() {
     set_left_speed(0.8);
     set_right_speed(0.8);
 
-    move_forward();
-    sleep(2);
-    stop();
-    move_backward();
-    sleep(2);
-    stop();
-    turn_left();
-    sleep(2);
-    stop();
-    turn_right();
-    sleep(2);
-    stop();
+    while(1){
+        move_forward();
+        sleep(2);
+        stop();
+        move_backward();
+        sleep(2);
+        stop();
+        turn_left();
+        sleep(2);
+        stop();
+        turn_right();
+        sleep(2);
+        stop();
+    }
 }
