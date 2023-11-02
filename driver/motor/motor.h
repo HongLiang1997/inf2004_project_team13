@@ -10,12 +10,12 @@
 #define CLK_DIV 100
 #define WRAP 12500
 
-void initMotor(void *params);
-void setLeftSpeed(float speed);
-void setRightSpeed(float speed);
+void init_motor(void *params);
+void set_left_speed(float speed);
+void set_right_speed(float speed);
 void stop(void *params);
-void moveForward(void *params);
-void turnHardLeft(void *params);
-void turnHardRight(void *params);
+void move_forward(void *params);
+void turn_left(void *params);
+void turn_right(void *params);
 
 #endif
