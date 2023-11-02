@@ -4,6 +4,15 @@
 #include "hardware/gpio.h"
 #include "motor.h"
 
+#define LEFT_WHEEL 14
+#define RIGHT_WHEEL 15
+#define RIGHT_WHEEL_FORWARD 18
+#define RIGHT_WHEEL_BACKWARD 19
+#define LEFT_WHEEL_FORWARD 20
+#define LEFT_WHEEL_BACKWARD 21
+#define CLK_DIV 100
+#define WRAP 12500
+
 uint slice_num_left;
 uint slice_num_right;
 
@@ -77,8 +86,8 @@ void turn_right(void *params) {
 int main(void) {
     stdio_init_all();
     init_motor(NULL);
-    set_left_speed(0.8);
-    set_right_speed(0.8);
+    set_left_speed(0.4);
+    set_right_speed(0.4);
 
     while(1){
         move_forward(NULL);
