@@ -126,6 +126,8 @@ void white_surface_detected_handler(uint gpio, uint32_t events)
 
         white_surface_detected = true;
         white_surface_start_time = get_absolute_time();
+        elapsed_seconds = absolute_time_diff_us(black_surface_start_time, white_surface_start_time) / 1000;
+        printf("BLACK -- Time elapsed: %d seconds\n", elapsed_seconds);
     }
     else if (events & GPIO_IRQ_EDGE_RISE)
     {
@@ -141,6 +143,8 @@ void white_surface_detected_handler(uint gpio, uint32_t events)
 
         white_surface_detected = false;
         black_surface_start_time = get_absolute_time();
+        elapsed_seconds = absolute_time_diff_us(white_surface_start_time, black_surface_start_time) / 1000;
+        printf("WHITE -- Time elapsed: %d seconds\n", elapsed_seconds);
     }
 }
 
@@ -193,19 +197,6 @@ int main()
 
     while (1)
     {
-        uint16_t sensor_value = adc_read();
-        if (white_surface_detected)
-        {
-            absolute_time_t current_time = get_absolute_time();
-            elapsed_seconds = absolute_time_diff_us(white_surface_start_time, current_time) / 1000;
-            printf("WHITE -- Time elapsed: %d seconds\n", elapsed_seconds);
-        }
-        else
-        {
-            absolute_time_t current_time = get_absolute_time();
-            elapsed_seconds = absolute_time_diff_us(black_surface_start_time, current_time) / 1000;
-            printf("BLACK -- Time elapsed: %d seconds\n", elapsed_seconds);
-        }
 
         // Print all values in the dynamic array
         printf("Dynamic Array Values: ");
