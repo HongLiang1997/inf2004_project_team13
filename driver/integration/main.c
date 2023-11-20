@@ -1,11 +1,15 @@
 #include "pico/stdlib.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include "hardware/pwm.h"
+#include "hardware/adc.h"
 #include "hardware/gpio.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "message_buffer.h"
 #include "semphr.h"
+#include <string.h>
+
 
 #define TRIG_PIN 0
 #define ECHO_PIN 1
@@ -37,6 +41,201 @@ SemaphoreHandle_t echoSemaphore;
 
 uint slice_num_left;
 uint slice_num_right;
+
+// barcode start
+#define THRESHOLD 1100
+#define IR_SENSOR_PIN 22
+#define INITIAL_SIZE 5
+
+volatile bool white_surface_detected = false;
+absolute_time_t white_surface_start_time;
+absolute_time_t black_surface_start_time;
+uint32_t elapsed_seconds = 0;
+
+int *array;
+int size, capacity;
+
+struct Code39Character
+{
+    char character;
+    const char *binary;
+};
+
+char findCode39Character(const char *barcodeString, const struct Code39Character *characters, int numCharacters)
+{
+    for (int i = 0; i < numCharacters; i++)
+    {
+        if (strcmp(barcodeString, characters[i].binary) == 0)
+        {
+            return characters[i].character;
+        }
+    }
+    return '?'; // Character not found
+}
+
+void initializeDynamicArray(int **array, int *size, int *capacity)
+{
+    *size = 0;
+    *capacity = INITIAL_SIZE;
+    *array = (int *)malloc(INITIAL_SIZE * sizeof(int));
+    if (*array == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed.\n");
+        exit(1);
+    }
+}
+
+void appendValue(int **array, int *size, int *capacity, int value)
+{
+    if (*size >= *capacity)
+    {
+        *capacity *= 2;
+        *array = (int *)realloc(*array, *capacity * sizeof(int));
+        if (*array == NULL)
+        {
+            fprintf(stderr, "Memory reallocation failed.\n");
+            exit(1);
+        }
+    }
+
+    (*array)[(*size)++] = value;
+}
+
+void freeDynamicArray(int *array)
+{
+    free(array);
+}
+
+char *concatenateArrayToString(int *array, int size)
+{
+    char *result = (char *)malloc((size * 4 + 1) * sizeof(char));
+    if (result == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed.\n");
+        exit(1);
+    }
+
+    int offset = 0;
+    for (int i = 0; i < size; i++)
+    {
+        int value = array[i];
+        int written = snprintf(result + offset, (size * 4 + 1) - offset, "%d", value);
+        if (written < 0 || written >= (size * 4 + 1) - offset)
+        {
+            fprintf(stderr, "Error converting integer to string.\n");
+            free(result);
+            exit(1);
+        }
+        offset += written;
+    }
+    result[offset] = '\0';
+
+    return result;
+}
+
+void white_surface_detected_handler(uint gpio, uint32_t events)
+{
+    if (events & GPIO_IRQ_EDGE_FALL)
+    {
+        if (elapsed_seconds < THRESHOLD)
+        {
+            appendValue(&array, &size, &capacity, 1);
+        }
+        else if (elapsed_seconds < 5000 && elapsed_seconds > THRESHOLD)
+        {
+            appendValue(&array, &size, &capacity, 111);
+        }
+
+        white_surface_detected = true;
+        white_surface_start_time = get_absolute_time();
+        elapsed_seconds = absolute_time_diff_us(black_surface_start_time, white_surface_start_time) / 1000;
+        printf("BLACK -- Time elapsed: %d seconds\n", elapsed_seconds);
+    }
+    else if (events & GPIO_IRQ_EDGE_RISE)
+    {
+        if (elapsed_seconds < THRESHOLD)
+        {
+            appendValue(&array, &size, &capacity, 2);
+        }
+        else if (elapsed_seconds < 5000 && elapsed_seconds > THRESHOLD)
+        {
+            appendValue(&array, &size, &capacity, 222);
+        }
+
+        white_surface_detected = false;
+        black_surface_start_time = get_absolute_time();
+        elapsed_seconds = absolute_time_diff_us(white_surface_start_time, black_surface_start_time) / 1000;
+        printf("WHITE -- Time elapsed: %d seconds\n", elapsed_seconds);
+    }
+}
+
+
+void barcodeTask(void *pvParameters) {
+    stdio_init_all();
+    adc_init();
+
+    adc_gpio_init(IR_SENSOR_PIN);
+    adc_select_input(0);
+    
+    gpio_init(IR_SENSOR_PIN);
+    gpio_set_dir(IR_SENSOR_PIN, GPIO_IN);
+    gpio_set_irq_enabled_with_callback(IR_SENSOR_PIN, GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE, true, &white_surface_detected_handler);
+
+    struct Code39Character characters[] = {
+        {'A', "12221211121112121112121222121112122212111211121"},
+                
+        {'B', "12221211121112121211121222121112122212111211121"},
+        {'C', "12221211121112121112111212221212122212111211121"},
+        {'D', "12221211121112121212111222121112122212111211121"},
+        {'E', "12221211121112121112121112221212122212111211121"},
+        {'F', "12221211121112121211121112221212122212111211121"},
+        {'G', "12221211121112121212122211121112122212111211121"},
+        {'H', "12221211121112121112121222111212122212111211121"},
+        {'I', "12221211121112121211121222111212122212111211121"},
+        {'J', "12221211121112121212111222111212122212111211121"},
+        {'K', "12221211121112121112121212221112122212111211121"},
+        {'L', "12221211121112121211121212221112122212111211121"},
+        {'M', "12221211121112121112111212122212122212111211121"},
+        {'N', "12221211121112121212111212221112122212111211121"},
+        {'O', "12221211121112121112121112122212122212111211121"},
+        {'P', "12221211121112121211121112122212122212111211121"},
+        {'Q', "12221211121112121212121112221112122212111211121"},
+        {'R', "12221211121112121112121211122212122212111211121"},
+        {'S', "12221211121112121211121211122212122212111211121"},
+        {'T', "12221211121112121212111211122212122212111211121"},
+        {'U', "12221211121112121112221212121112122212111211121"},
+        {'V', "12221211121112121222111212121112122212111211121"},
+        {'W', "12221211121112121112221112121212122212111211121"},
+        {'X', "12221211121112121222121112121112122212111211121"},
+        {'Y', "12221211121112121112221211121212122212111211121"},
+        {'Z', "12221211121112121222111211121212122212111211121"}};
+
+    int numCharacters = sizeof(characters) / sizeof(characters[0]);
+
+    initializeDynamicArray(&array, &size, &capacity);
+
+    while (1) {
+        printf("Dynamic Array Values: ");
+        for (int i = 0; i < size; i++) {
+            printf("%d ", array[i]);
+        }
+        printf("\n");
+
+        char *barcodeString = concatenateArrayToString(array, size);
+        printf("Barcode String: %s\n", barcodeString);
+
+        char character = findCode39Character(barcodeString, characters, numCharacters);
+        printf("Code 39 Character: %c\n", character);
+
+        if (size >= 40) {
+            freeDynamicArray(array);
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    vTaskDelete(NULL);
+}
+// barcode end
 
 // WHEELENCODER WHEELENCODER WHEELENCODER
 //  Constants for distance and speed calculation
@@ -540,6 +739,8 @@ int main()
     // Create the wheel encoder task with lowest priority
     xTaskCreate(encoder_task, "EncoderTask", configMINIMAL_STACK_SIZE, NULL, configMAX_PRIORITIES - 1, NULL);
 
+    xTaskCreate(barcodeTask, "BarcodeTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+
     // Start the FreeRTOS scheduler
     vTaskStartScheduler();
 
@@ -549,5 +750,3 @@ int main()
     }
     return 0;
 }
-
-// Integrated wheel encoder
