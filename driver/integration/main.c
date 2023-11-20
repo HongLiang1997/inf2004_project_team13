@@ -154,7 +154,6 @@ void ultrasonic_interrupt_handler_task(void *pvParameters) {
 }
 
 // Motor control task
-// Motor control task
 void motor_control_task(void *pvParameters) {
     float distance;
 
@@ -197,5 +196,3 @@ int main() {
     }
      return 0;
 }
-
-   
