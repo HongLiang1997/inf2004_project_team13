@@ -122,6 +122,14 @@ void init_ultrasonic_pins() {
     gpio_set_dir(TRIG_PIN, GPIO_OUT);
 }
 
+// Initialize GPIO pins for the IR sensor
+void init_ir_pins(){
+    gpio_init(26); // Left sensor connected to GPIO 26
+    gpio_init(27); // Right sensor connected to GPIO 27
+    gpio_set_dir(26, GPIO_IN);
+    gpio_set_dir(27, GPIO_IN);
+}
+
 // Ultrasonic sensor task
 void ultrasonic_interrupt_handler_task(void *pvParameters) {
     float distance;
@@ -153,6 +161,50 @@ void ultrasonic_interrupt_handler_task(void *pvParameters) {
     }
 }
 
+// IR Sensor control task
+void ir_sensor_control_task(void *pvParameters){
+    while (1) {
+        bool left_result = gpio_get(26);   // Read from the left sensor (GPIO 26)
+        bool right_result = gpio_get(27); // Read from the right sensor (GPIO 27)
+
+        // Default State IR Sensor will return 1
+        printf("Left Sensor Reading: %d\n", left_result);
+        printf("Right Sensor Reading: %d\n", right_result);
+
+        if (left_result == 0 && right_result == 0)
+        {
+            // Both sensors detect a black line.
+            // This indicates that the car is directly on top of both lines.
+            // You can perform a specific action like stopping or making corrections.
+            printf("left right black\n");
+        }
+        else if (left_result == 0 && right_result == 1)
+        {
+            // Left sensor detects a black line, but right sensor doesn't.
+            // This means the car is deviating towards the left line.
+            // You can steer the car to the right to get back on track. By making Left Wheel rotation higher
+            printf("left black right white\n");
+        }
+        else if (left_result == 1 && right_result == 0)
+        {
+            // Right sensor detects a black line, but left sensor doesn't.
+            // This means the car is deviating towards the right line.
+            // You can steer the car to the left to get back on track. By making Right Wheel rotation higher
+            printf("left white right black\n");
+        }
+        else if (left_result == 1 && right_result == 1)
+        {
+            // Both sensors do not detect a black line.
+            // The car is off the lines.
+            // You can perform a specific action, such as searching for the lines.
+            printf("left right white\n");
+        }
+
+        // sleep_ms(1000); // Wait for a moment before taking the next reading
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Adjust the delay as needed
+    }
+}
+
 // Motor control task
 void motor_control_task(void *pvParameters) {
     float distance;
@@ -165,7 +217,7 @@ void motor_control_task(void *pvParameters) {
             stop(NULL);
         } else {
             // Adjust the motor speed based on the distance
-            float speed = 0.5; // Set an initial speed (you can change this value)
+            float speed = 0.8; // Set an initial speed (you can change this value)
             move_forward(NULL);
             set_left_speed(speed);
             set_right_speed(speed);
@@ -178,12 +230,18 @@ void motor_control_task(void *pvParameters) {
 int main() {
     stdio_init_all();
     init_ultrasonic_pins();
+    init_ir_pins();
     init_motor(NULL);
 
     distanceBuffer = xMessageBufferCreate(sizeof(float) * 2);
 
+    sleep_ms(2000);
+
     // Create the ultrasonic_interrupt_handler_task task
     xTaskCreate(ultrasonic_interrupt_handler_task, "UltrasonicTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
+
+    // Create the ir_sensor_control_task
+    xTaskCreate(ir_sensor_control_task, "IRSensorControlTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
 
     // Create the motor_control_task
     xTaskCreate(motor_control_task, "MotorControlTask", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
