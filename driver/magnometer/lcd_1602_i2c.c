@@ -1,176 +1,138 @@
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "pico/binary_info.h"
+#include "mag.h"
 
-#define I2C_PORT i2c0
-#define ACCEL_CTRL_REG1_A 0x20      // Control register for accelerometer
-#define MAGNETOMETER_ADDR 0x1E      // Magnetometer I2C Address
-#define ACCELEROMETER_ADDR 0x19     // Accelerometer I2C Address
-#define MAGNETOMETER_MR_REG_M 0x02  // Mode register for magnetometer
-#define MAGNETOMETER_OUT_X_H_M 0x03 // Data output X high byte register for magnetometer
 
-int16_t ax_offset = 0, ay_offset = 0, az_offset = 0; // Storing offset for accelerometer data calibration
+const int LCD_CLEARDISPLAY = 0x01;
+const int LCD_RETURNHOME = 0x02;
+const int LCD_ENTRYMODESET = 0x04;
+const int LCD_DISPLAYCONTROL = 0x08;
+const int LCD_CURSORSHIFT = 0x10;
+const int LCD_FUNCTIONSET = 0x20;
+const int LCD_SETCGRAMADDR = 0x40;
+const int LCD_SETDDRAMADDR = 0x80;
 
-void init_i2c()
-{
-    i2c_init(I2C_PORT, 400000); // Initialize I2C with 400KHz
-    gpio_set_function(4, GPIO_FUNC_I2C); // Initialise GP4 pin
-    gpio_set_function(5, GPIO_FUNC_I2C); // Initialise GP5 pin
-    gpio_pull_up(4);
-    gpio_pull_up(5);
+// flags for display entry mode
+const int LCD_ENTRYSHIFTINCREMENT = 0x01;
+const int LCD_ENTRYLEFT = 0x02;
+
+// flags for display and cursor control
+const int LCD_BLINKON = 0x01;
+const int LCD_CURSORON = 0x02;
+const int LCD_DISPLAYON = 0x04;
+
+// flags for display and cursor shift
+const int LCD_MOVERIGHT = 0x04;
+const int LCD_DISPLAYMOVE = 0x08;
+
+// flags for function set
+const int LCD_5x10DOTS = 0x04;
+const int LCD_2LINE = 0x08;
+const int LCD_8BITMODE = 0x10;
+
+// flag for backlight control
+const int LCD_BACKLIGHT = 0x08;
+
+const int LCD_ENABLE_BIT = 0x04;
+
+// By default these LCD display drivers are on bus address 0x27
+static int addr = 0x27;
+
+// Modes for lcd_send_byte
+#define LCD_CHARACTER  1
+#define LCD_COMMAND    0
+
+#define MAX_LINES      2
+#define MAX_CHARS      16
+
+/* Quick helper function for single byte transfers */
+void i2c_write_byte(uint8_t val) {
+#ifdef i2c_default
+    i2c_write_blocking(i2c_default, addr, &val, 1, false);
+#endif
 }
 
-// Function to read data from accelerometer
-bool read_accel_data(int16_t *x, int16_t *y, int16_t *z)
-{
-    uint8_t buffer[6];
+void lcd_toggle_enable(uint8_t val) {
+    // Toggle enable pin on LCD display
+    // We cannot do this too quickly or things don't work
+#define DELAY_US 600
+    sleep_us(DELAY_US);
+    i2c_write_byte(val | LCD_ENABLE_BIT);
+    sleep_us(DELAY_US);
+    i2c_write_byte(val & ~LCD_ENABLE_BIT);
+    sleep_us(DELAY_US);
+}
 
-    // Set the register to start reading from
-    uint8_t start_reg = 0x28 | 0x80; // 0x80 enables auto-increment
-    if (i2c_write_blocking(I2C_PORT, ACCELEROMETER_ADDR, &start_reg, 1, true) != PICO_ERROR_GENERIC)
-    {
+// The display is sent a byte as two separate nibble transfers
+void lcd_send_byte(uint8_t val, int mode) {
+    uint8_t high = mode | (val & 0xF0) | LCD_BACKLIGHT;
+    uint8_t low = mode | ((val << 4) & 0xF0) | LCD_BACKLIGHT;
 
-        // Read 6 bytes of data
-        if (i2c_read_blocking(I2C_PORT, ACCELEROMETER_ADDR, buffer, 6, false) == 6)
-        {
-            *x = (int16_t)(buffer[0] | (buffer[1] << 8));
-            *y = (int16_t)(buffer[2] | (buffer[3] << 8));
-            *z = (int16_t)(buffer[4] | (buffer[5] << 8));
-            return true;
-        }
+    i2c_write_byte(high);
+    lcd_toggle_enable(high);
+    i2c_write_byte(low);
+    lcd_toggle_enable(low);
+}
+
+void lcd_clear(void) {
+    lcd_send_byte(LCD_CLEARDISPLAY, LCD_COMMAND);
+}
+
+// go to location on LCD
+void lcd_set_cursor(int line, int position) {
+    int val = (line == 0) ? 0x80 + position : 0xC0 + position;
+    lcd_send_byte(val, LCD_COMMAND);
+}
+
+static void inline lcd_char(char val) {
+    lcd_send_byte(val, LCD_CHARACTER);
+}
+
+void lcd_string(const char *s) {
+    while (*s) {
+        lcd_char(*s++);
     }
-    return false;
 }
 
-// Function to read data from magnometer
-bool read_mag_data(int16_t *x, int16_t *y, int16_t *z)
-{
-    uint8_t buffer[6];
-    uint8_t start_reg = MAGNETOMETER_OUT_X_H_M;
+void lcd_init() {
+    lcd_send_byte(0x03, LCD_COMMAND);
+    lcd_send_byte(0x03, LCD_COMMAND);
+    lcd_send_byte(0x03, LCD_COMMAND);
+    lcd_send_byte(0x02, LCD_COMMAND);
 
-    if (i2c_write_blocking(I2C_PORT, MAGNETOMETER_ADDR, &start_reg, 1, true) != PICO_ERROR_GENERIC)
-    {
-        if (i2c_read_blocking(I2C_PORT, MAGNETOMETER_ADDR, buffer, 6, false) == 6)
-        {
-            *x = (int16_t)(buffer[0] << 8 | buffer[1]);
-            *z = (int16_t)(buffer[2] << 8 | buffer[3]);
-            *y = (int16_t)(buffer[4] << 8 | buffer[5]);
-            return true;
-        }
-    }
-    return false;
+    lcd_send_byte(LCD_ENTRYMODESET | LCD_ENTRYLEFT, LCD_COMMAND);
+    lcd_send_byte(LCD_FUNCTIONSET | LCD_2LINE, LCD_COMMAND);
+    lcd_send_byte(LCD_DISPLAYCONTROL | LCD_DISPLAYON, LCD_COMMAND);
+    lcd_clear();
 }
 
-// Calibrate magnometer by calculating offsets and averaging them
-void calibrate_mag()
-{
-    int16_t x, y, z;
-    int16_t x_offset = 0;
-    int16_t y_offset = 0;
-    int16_t z_offset = 0;
-    for (int i = 0; i < 100; i++)
-    {
-        read_mag_data(&x, &y, &z);
-        x_offset += x;
-        y_offset += y;
-        z_offset += z;
-        sleep_ms(100);
-    }
-    x_offset /= 100;
-    y_offset /= 100;
-    z_offset /= 100;
-    printf("Magnetometer offsets - X: %d, Y: %d, Z: %d\n", x_offset, y_offset, z_offset);
+void print_angle(float angle) {
+    printf("Angle: %.2f degrees\n", angle);
 }
 
-// Calibrate accelerometer by calculating offsets and averaging them
-void calibrate_accelerometer()
-{
-    int16_t x, y, z;
-    int sum_x = 0, sum_y = 0, sum_z = 0;
+int main() {
 
-    for (int i = 0; i < 100; i++)
-    { // Taking 100 samples for calibration
-        if (read_accel_data(&x, &y, &z))
-        {
-            sum_x += x;
-            sum_y += y;
-            sum_z += z;
-        }
-        sleep_ms(100);
-    }
-    ax_offset = sum_x / 100;
-    ay_offset = sum_y / 100;
-    az_offset = (sum_z / 100) - 1000; // Compensating for the effect of gravity
-}
-
-int main()
-{
     stdio_init_all();
 
-    // Initialize USB
-    stdio_usb_init();
+// #if !defined(i2c_default) || !defined(PICO_DEFAULT_I2C_SDA_PIN) || !defined(PICO_DEFAULT_I2C_SCL_PIN)
+//     #warning i2c/lcd_1602_i2c example requires a board with I2C pins
+// #else
+    // This example will use I2C0 on the default SDA and SCL pins (26, 27 on a Pico)
+    i2c_init(i2c_default, 100 * 1000);
+    gpio_set_function(26, GPIO_FUNC_I2C);
+    gpio_set_function(27, GPIO_FUNC_I2C);
+    gpio_pull_up(26);
+    gpio_pull_up(27);
+    // Make the I2C pins available to picotool
+    bi_decl(bi_2pins_with_func(26, 27, GPIO_FUNC_I2C));
 
-    // Initialize I2C
-    init_i2c();
-
-    // Initialize the accelerometer (set it to normal mode and enable all axes, 100Hz)
-    uint8_t ctrl1_reg = 0x57;
-    if (i2c_write_blocking(I2C_PORT, ACCELEROMETER_ADDR, (uint8_t[]){ACCEL_CTRL_REG1_A, ctrl1_reg}, 2, false) != PICO_ERROR_GENERIC)
-    {
-
-        // Initialize the magnetometer (set it to continuous conversion mode)
-        uint8_t mr_reg = 0x00;
-        if (i2c_write_blocking(I2C_PORT, MAGNETOMETER_ADDR, (uint8_t[]){MAGNETOMETER_MR_REG_M, mr_reg}, 2, false) != PICO_ERROR_GENERIC)
-        {
-
-            // Calibrate the magnetometer
-            calibrate_mag();
-
-            // Calibrate the accelerometer
-            calibrate_accelerometer();
-
-            while (true)
-            {
-                int16_t x, y, z;
-
-                // Read accelerometer data
-                if (read_accel_data(&x, &y, &z))
-                {
-
-                    // Compensate for the offset values obtained during calibration
-                    x -= ax_offset;
-                    y -= ay_offset;
-                    z -= az_offset;
-
-// Print the calibrated data
-                    printf("Accelerometer - X: %d, Y: %d, Z: %d\n", x, y, z);
-                }
-                else
-                {
-                    printf("Error reading accelerometer data\n");
-                }
-
-                // Read magnetometer data
-                if (read_mag_data(&x, &y, &z))
-                {
-                    printf("Magnetometer - X: %d, Y: %d, Z: %d\n", x, y, z);
-                }
-                else
-                {
-                    printf("Error reading magnetometer data\n");
-                }
-
-                sleep_ms(1000);
-            }
-        }
-        else
-        {
-            printf("Error initializing magnetometer\n");
-        }
-    }
-    else
-    {
-        printf("Error initializing accelerometer\n");
+    while (1) {
+        // Call the mag_measurement function to get angles and heading
+        mag_measurement();
+        sleep_ms(1000);  // Sleep for 1 second 
     }
 
     return 0;

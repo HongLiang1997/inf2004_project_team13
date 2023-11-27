@@ -1,5 +1,7 @@
 add_executable(lcd_1602_i2c
         lcd_1602_i2c.c
+        mag.c
+        mag.h
         )
 
 # pull in common dependencies and additional i2c hardware support
